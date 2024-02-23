@@ -1,14 +1,15 @@
-import warnings
 import argparse
 import logging
-import pandas as pd
-import numpy as np
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import ElasticNet
+import warnings
+from pathlib import Path
+
 import mlflow
 import mlflow.sklearn
-from pathlib import Path
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import ElasticNet
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
 
 logging.basicConfig(level=logging.WARN)
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--alpha", type=float, required=False, default=0.7)
 parser.add_argument("--l1_ratio", type=float, required=False, default=0.7)
 args = parser.parse_args()
+
 
 # evaluation function
 def eval_metrics(actual, pred):
@@ -46,14 +48,16 @@ if __name__ == "__main__":
     alpha = args.alpha
     l1_ratio = args.l1_ratio
 
-    mlflow.set_tracking_uri(uri="")
-
     print("The set tracking uri is ", mlflow.get_tracking_uri())
-    exp_id = mlflow.create_experiment(
-        name="exp_create_exp_artifact",
-        tags={"version": "v1", "priority": "p1"},
-        artifact_location=Path.cwd().joinpath("myartifacts").as_uri()
-    )
+    exp_name = "exp_create_exp_artifact"
+    exp = mlflow.get_experiment_by_name(exp_name)
+    if exp:
+        exp_id = exp.experiment_id
+    else:
+        exp_id = mlflow.create_experiment(
+            name=exp_name,
+            tags={"version": "v1", "priority": "p1"},
+        )
     get_exp = mlflow.get_experiment(exp_id)
 
     print("Name: {}".format(get_exp.name))
@@ -81,4 +85,4 @@ if __name__ == "__main__":
         mlflow.log_metric("rmse", rmse)
         mlflow.log_metric("r2", r2)
         mlflow.log_metric("mae", mae)
-        mlflow.sklearn.log_model(lr, "mymodel")
+        mlflow.sklearn.log_model(lr, "model")
