@@ -1,2 +1,4 @@
 **/mlruns/
 red-wine-quality.csv
+/.vscode/
+/data/
