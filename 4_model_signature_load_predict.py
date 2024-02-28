@@ -9,6 +9,7 @@ import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from mlflow.entities.experiment import Experiment
+from mlflow.models.signature import ModelSignature, infer_signature
 from mlflow.tracking.fluent import ActiveRun
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import mean_squared_error, r2_score
@@ -21,6 +22,7 @@ warnings.filterwarnings("ignore")
 np.random.seed(40)
 
 EXP_NAME = os.path.basename(__file__).replace(".py", "")
+
 RUN_TAGS: dict[str, str] = {
     "type": "classification",
 }
@@ -80,45 +82,75 @@ print("The set tracking uri is ", mlflow.get_tracking_uri())
 # Get or create an experiment
 exp, exp_id = setup_experiment(EXP_NAME)
 
-for i in range(3):
-    alpha = args.alpha * (i + 1)
-    l1_ratio = args.l1_ratio * (i + 1)
+alpha = args.alpha
+l1_ratio = args.l1_ratio
 
-    run: ActiveRun = mlflow.start_run(
-        experiment_id=exp_id,
-        run_name=f"based_alpha_{args.alpha}_run{i+1}",
-        tags=RUN_TAGS,
+run: ActiveRun = mlflow.start_run(
+    experiment_id=exp_id, run_name="autolog_sklearn", tags=RUN_TAGS
+)
+
+mlflow.sklearn.autolog(
+    log_input_examples=False,
+    log_model_signatures=False,
+    log_models=False,
+    log_post_training_metrics=True,
+    max_tuning_runs=10,
+)
+
+print("Run started")
+
+lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
+lr.fit(train_x, train_y)
+
+predicted_qualities = lr.predict(test_x)
+
+signature: ModelSignature = infer_signature(
+    model_input=train_x, model_output=predicted_qualities
+)
+mlflow.sklearn.log_model(
+    sk_model=lr,
+    artifact_path="model",
+    signature=signature,
+    input_example=train_x.iloc[0:2],
+    code_paths=[os.path.basename(__file__)],
+)
+
+predicted_qualities = lr.predict(test_x)
+
+(rmse, r2) = eval_metrics(test_y, predicted_qualities)
+
+print(f"Active run id is {mlflow.active_run().info.run_id}")
+print(f"Active run name is {mlflow.active_run().info.run_name}")
+
+mlflow.set_tags({"new_tag": "new_value"})
+
+mlflow.log_artifacts(local_dir="data", artifact_path="logged_data")
+
+mlflow.end_run()
+print("Run ended")
+
+print(f"Last active run id is {mlflow.last_active_run().info.run_id}")
+
+loaded_model = mlflow.last_active_run().info.run_id
+model_uri = mlflow.get_run(loaded_model).info.artifact_uri + "/model"
+loaded_model = mlflow.pyfunc.load_model(model_uri)
+print("Model URI: ", model_uri)
+predicted_qualities_from_mlflow = loaded_model.predict(test_x)
+
+# check predicted_qualities and predicted_qualities_from_mlflow are equal
+assert np.allclose(predicted_qualities, predicted_qualities_from_mlflow)
+
+
+# load best model and predict
+def load_best_model_and_predict():
+    best_run = mlflow.search_runs(
+        filter_string="tags.type = 'classification'",
+        order_by=["metrics.r2 DESC"],
+        max_results=1,
     )
-    print("Run started")
-
-    lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
-    lr.fit(train_x, train_y)
-
-    predicted_qualities = lr.predict(test_x)
-
-    (rmse, r2) = eval_metrics(test_y, predicted_qualities)
-
-    print(f"Active run id is {mlflow.active_run().info.run_id}")
-    print(f"Active run name is {mlflow.active_run().info.run_name}")
-
-    mlflow.set_tags({"new_tag": "new_value"})
-
-    mlflow.log_param("alpha", alpha)
-    mlflow.log_param("l1_ratio", l1_ratio)
-    mlflow.log_metric("rmse", rmse)
-    mlflow.log_metric("r2", r2)
-    mlflow.sklearn.log_model(
-        sk_model=lr,
-        artifact_path="model",
-        input_example=train_x.iloc[0:2],
-        code_paths=[os.path.basename(__file__)],
-    )
-    mlflow.log_artifacts(local_dir="data", artifact_path="logged_data")
-
-    dataset = mlflow.data.from_pandas(df)
-    mlflow.log_input(dataset, context="full")
-
-    mlflow.end_run()
-    print("Run ended")
-
-    print(f"Last active run id is {mlflow.last_active_run().info.run_id}")
+    best_run_id = best_run.run_id[0]
+    print("Best run id is ", best_run_id)
+    model_uri = mlflow.get_run(best_run_id).info.artifact_uri + "/model"
+    loaded_model = mlflow.pyfunc.load_model(model_uri)
+    predicted_qualities_from_mlflow = loaded_model.predict(test_x)
+    print("Predicted qualities from best model: ", predicted_qualities_from_mlflow)

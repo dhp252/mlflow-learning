@@ -11,36 +11,36 @@ import pandas as pd
 from mlflow.entities.experiment import Experiment
 from mlflow.tracking.fluent import ActiveRun
 from sklearn.linear_model import ElasticNet
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
 logging.basicConfig(level=logging.WARN)
 logger = logging.getLogger(__name__)
 
-EXP_NAME = "Demo_with_ElasticNet"
+warnings.filterwarnings("ignore")
+np.random.seed(40)
+
+EXP_NAME = os.path.basename(__file__).replace(".py", "")
+
 RUN_TAGS: dict[str, str] = {
-    "source": "create_experiment.py",
-    "version": "v1",
-    "priority": "p1",
     "type": "classification",
 }
 # get arguments from command
 parser = argparse.ArgumentParser()
-parser.add_argument("--alpha", type=float, required=False, default=0.7)
-parser.add_argument("--l1_ratio", type=float, required=False, default=0.7)
+parser.add_argument("--alpha", type=float, required=False, default=0.2)
+parser.add_argument("--l1_ratio", type=float, required=False, default=0.2)
 args = parser.parse_args()
 
 
 # evaluation function
 def eval_metrics(actual, pred):
     rmse = np.sqrt(mean_squared_error(actual, pred))
-    mae = mean_absolute_error(actual, pred)
     r2 = r2_score(actual, pred)
-    return rmse, mae, r2
+    return rmse, r2
 
 
 # Function to create or get an existing MLflow experiment
-def get_or_create_experiment(name) -> Tuple[Experiment, str]:
+def setup_experiment(name, verbose=True) -> Tuple[Experiment, str]:
     exp: Experiment | None = mlflow.get_experiment_by_name(name)
     if exp:
         exp_id: str = exp.experiment_id
@@ -49,11 +49,17 @@ def get_or_create_experiment(name) -> Tuple[Experiment, str]:
             name=name, tags={"exp_version": "v1", "priority": "p1"}
         )
     exp: Experiment = mlflow.get_experiment(experiment_id=exp_id)
+
+    if verbose:
+        print("Name: {}".format(exp.name))
+        print("Experiment_id: {}".format(exp.experiment_id))
+        print("Artifact Location: {}".format(exp.artifact_location))
+        print("Tags: {}".format(exp.tags))
+        print("Lifecycle_stage: {}".format(exp.lifecycle_stage))
+        print("Creation timestamp: {}".format(exp.creation_time))
+
     return exp, exp_id
 
-
-warnings.filterwarnings("ignore")
-np.random.seed(40)
 
 # Read the wine-quality csv file from the URL
 df = pd.read_csv("red-wine-quality.csv")
@@ -70,47 +76,46 @@ test_x = test.drop(["quality"], axis=1)
 train_y = train[["quality"]]
 test_y = test[["quality"]]
 
-alpha = args.alpha
-l1_ratio = args.l1_ratio
-
 print("The set tracking uri is ", mlflow.get_tracking_uri())
 
 # Get or create an experiment
-exp, exp_id = get_or_create_experiment(EXP_NAME)
-print("Name: {}".format(exp.name))
-print("Experiment_id: {}".format(exp.experiment_id))
-print("Artifact Location: {}".format(exp.artifact_location))
-print("Tags: {}".format(exp.tags))
-print("Lifecycle_stage: {}".format(exp.lifecycle_stage))
-print("Creation timestamp: {}".format(exp.creation_time))
+exp, exp_id = setup_experiment(EXP_NAME)
+
+alpha = args.alpha
+l1_ratio = args.l1_ratio
 
 run: ActiveRun = mlflow.start_run(
-    experiment_id=exp_id, run_name="Elasticnet_run", tags=RUN_TAGS
+    experiment_id=exp_id, run_name="autolog_sklearn", tags=RUN_TAGS
 )
+
+mlflow.sklearn.autolog(
+    log_input_examples=True,
+    log_model_signatures=True,
+    log_post_training_metrics=True,
+    max_tuning_runs=10,
+)
+
 print("Run started")
 
 lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
 lr.fit(train_x, train_y)
 
+mlflow.sklearn.log_model(
+    sk_model=lr,
+    artifact_path="model",
+    input_example=train_x.iloc[0:2],
+    code_paths=[os.path.basename(__file__)],
+)
+
 predicted_qualities = lr.predict(test_x)
 
-(rmse, mae, r2) = eval_metrics(test_y, predicted_qualities)
+(rmse, r2) = eval_metrics(test_y, predicted_qualities)
 
-print("Elasticnet model (alpha={:f}, l1_ratio={:f}):".format(alpha, l1_ratio))
-print("  RMSE: %s" % rmse)
-print("  MAE: %s" % mae)
-print("  R2: %s" % r2)
 print(f"Active run id is {mlflow.active_run().info.run_id}")
 print(f"Active run name is {mlflow.active_run().info.run_name}")
 
 mlflow.set_tags({"new_tag": "new_value"})
 
-mlflow.log_param("alpha", alpha)
-mlflow.log_param("l1_ratio", l1_ratio)
-mlflow.log_metric("rmse", rmse)
-mlflow.log_metric("r2", r2)
-mlflow.log_metric("mae", mae)
-mlflow.sklearn.log_model(lr, "model")
 mlflow.log_artifacts(local_dir="data", artifact_path="logged_data")
 
 mlflow.end_run()

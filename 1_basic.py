@@ -26,8 +26,8 @@ RUN_TAGS: dict[str, str] = {
 }
 # get arguments from command
 parser = argparse.ArgumentParser()
-parser.add_argument("--alpha", type=float, required=False, default=0.2)
-parser.add_argument("--l1_ratio", type=float, required=False, default=0.2)
+parser.add_argument("--alpha", type=float, required=False, default=0.7)
+parser.add_argument("--l1_ratio", type=float, required=False, default=0.7)
 args = parser.parse_args()
 
 
@@ -75,50 +75,47 @@ test_x = test.drop(["quality"], axis=1)
 train_y = train[["quality"]]
 test_y = test[["quality"]]
 
+alpha = args.alpha
+l1_ratio = args.l1_ratio
+
 print("The set tracking uri is ", mlflow.get_tracking_uri())
 
 # Get or create an experiment
 exp, exp_id = setup_experiment(EXP_NAME)
 
-for i in range(3):
-    alpha = args.alpha * (i + 1)
-    l1_ratio = args.l1_ratio * (i + 1)
+run: ActiveRun = mlflow.start_run(
+    experiment_id=exp_id, run_name="Elasticnet_run", tags=RUN_TAGS
+)
+print("Run started")
 
-    run: ActiveRun = mlflow.start_run(
-        experiment_id=exp_id,
-        run_name=f"based_alpha_{args.alpha}_run{i+1}",
-        tags=RUN_TAGS,
-    )
-    print("Run started")
+lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
+lr.fit(train_x, train_y)
 
-    lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
-    lr.fit(train_x, train_y)
+predicted_qualities = lr.predict(test_x)
 
-    predicted_qualities = lr.predict(test_x)
+(rmse, r2) = eval_metrics(test_y, predicted_qualities)
 
-    (rmse, r2) = eval_metrics(test_y, predicted_qualities)
+print(f"Active run id is {mlflow.active_run().info.run_id}")
+print(f"Active run name is {mlflow.active_run().info.run_name}")
 
-    print(f"Active run id is {mlflow.active_run().info.run_id}")
-    print(f"Active run name is {mlflow.active_run().info.run_name}")
+mlflow.set_tags({"new_tag": "new_value"})
 
-    mlflow.set_tags({"new_tag": "new_value"})
+mlflow.log_param("alpha", alpha)
+mlflow.log_param("l1_ratio", l1_ratio)
+mlflow.log_metric("rmse", rmse)
+mlflow.log_metric("r2", r2)
+mlflow.sklearn.log_model(
+    sk_model=lr,
+    artifact_path="model",
+    input_example=train_x.iloc[0:2],
+    code_paths=["1_basic.py"],
+)
+mlflow.log_artifacts(local_dir="data", artifact_path="logged_data")
 
-    mlflow.log_param("alpha", alpha)
-    mlflow.log_param("l1_ratio", l1_ratio)
-    mlflow.log_metric("rmse", rmse)
-    mlflow.log_metric("r2", r2)
-    mlflow.sklearn.log_model(
-        sk_model=lr,
-        artifact_path="model",
-        input_example=train_x.iloc[0:2],
-        code_paths=[os.path.basename(__file__)],
-    )
-    mlflow.log_artifacts(local_dir="data", artifact_path="logged_data")
+mlflow.log_input(dataset=mlflow.data.from_pandas(train), context="train")
+mlflow.log_input(dataset=mlflow.data.from_pandas(test), context="test")
 
-    dataset = mlflow.data.from_pandas(df)
-    mlflow.log_input(dataset, context="full")
+mlflow.end_run()
+print("Run ended")
 
-    mlflow.end_run()
-    print("Run ended")
-
-    print(f"Last active run id is {mlflow.last_active_run().info.run_id}")
+print(f"Last active run id is {mlflow.last_active_run().info.run_id}")
