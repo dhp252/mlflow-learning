@@ -84,11 +84,13 @@ for i in range(3):
     alpha = args.alpha * (i + 1)
     l1_ratio = args.l1_ratio * (i + 1)
 
+    # ! <start focus> ! #
     run: ActiveRun = mlflow.start_run(
         experiment_id=exp_id,
         run_name=f"based_alpha_{args.alpha}_run{i+1}",
         tags=RUN_TAGS,
     )
+    # ! <end focus> ! #
     print("Run started")
 
     lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)

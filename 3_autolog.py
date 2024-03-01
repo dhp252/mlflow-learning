@@ -88,13 +88,13 @@ run: ActiveRun = mlflow.start_run(
     experiment_id=exp_id, run_name="autolog_sklearn", tags=RUN_TAGS
 )
 
+# ! <start focus> ! #
 mlflow.sklearn.autolog(
     log_input_examples=True,
     log_model_signatures=True,
     log_post_training_metrics=True,
     max_tuning_runs=10,
 )
-
 print("Run started")
 
 lr = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, random_state=42)
@@ -106,6 +106,7 @@ mlflow.sklearn.log_model(
     input_example=train_x.iloc[0:2],
     code_paths=[os.path.basename(__file__)],
 )
+# ! <end focus> ! #
 
 predicted_qualities = lr.predict(test_x)
 

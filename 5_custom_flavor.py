@@ -118,9 +118,9 @@ signature: ModelSignature = infer_signature(
 #     code_paths=[os.path.basename(__file__)],
 # )
 
+# ! <start focus> ! #
 custom_model_path = "sklearn_model.pkl"
 joblib.dump(lr, custom_model_path)
-
 
 class MyMCustomeModel(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
@@ -140,6 +140,7 @@ mlflow.pyfunc.log_model(
     code_path=[os.path.basename(__file__)],
     conda_env=conda_env,
 )
+# ! <end focus> ! #
 
 predicted_qualities = lr.predict(test_x)
 

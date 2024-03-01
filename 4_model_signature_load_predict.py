@@ -104,6 +104,7 @@ lr.fit(train_x, train_y)
 
 predicted_qualities = lr.predict(test_x)
 
+# ! <start focus> ! #
 signature: ModelSignature = infer_signature(
     model_input=train_x, model_output=predicted_qualities
 )
@@ -115,6 +116,7 @@ mlflow.sklearn.log_model(
     code_paths=[os.path.basename(__file__)],
 )
 
+# ! <end focus> ! #
 predicted_qualities = lr.predict(test_x)
 
 (rmse, r2) = eval_metrics(test_y, predicted_qualities)
@@ -131,15 +133,16 @@ print("Run ended")
 
 print(f"Last active run id is {mlflow.last_active_run().info.run_id}")
 
+# ! <start focus> ! #
 loaded_model = mlflow.last_active_run().info.run_id
 model_uri = mlflow.get_run(loaded_model).info.artifact_uri + "/model"
 loaded_model = mlflow.pyfunc.load_model(model_uri)
 print("Model URI: ", model_uri)
 predicted_qualities_from_mlflow = loaded_model.predict(test_x)
+# ! <end focus> ! #
 
 # check predicted_qualities and predicted_qualities_from_mlflow are equal
 assert np.allclose(predicted_qualities, predicted_qualities_from_mlflow)
-
 
     # load best model and predict
 def load_best_model_and_predict():
