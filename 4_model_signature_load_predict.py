@@ -141,7 +141,7 @@ predicted_qualities_from_mlflow = loaded_model.predict(test_x)
 assert np.allclose(predicted_qualities, predicted_qualities_from_mlflow)
 
 
-# load best model and predict
+    # load best model and predict
 def load_best_model_and_predict():
     best_run = mlflow.search_runs(
         filter_string="tags.type = 'classification'",
