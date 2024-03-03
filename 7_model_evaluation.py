@@ -190,9 +190,9 @@ def prediction_target_scatter(
 # define thresholds
 thresholds = {
     "mean_squared_error": MetricThreshold(
-        threshold=0.1,  # maximum allowed MSE
-        min_absolute_change=0.1,  # minimum absolute improvement compared to the baseline
-        min_relative_change=0.05,  # minimum relative improvement compared to the baseline
+        threshold=0.8,  # maximum allowed MSE
+        # min_absolute_change=0.1,  # minimum absolute improvement compared to the baseline
+        # min_relative_change=0.05,  # minimum relative improvement compared to the baseline
         greater_is_better=False,  # lower MSE is better
     ),
 }
@@ -211,7 +211,7 @@ mlflow.evaluate(
         my_metric_2,
     ],
     custom_artifacts=[prediction_target_scatter],  # optional
-    # validation_thresholds=thresholds,  # optional
+    validation_thresholds=thresholds,  # optional
     baseline_model=baseline_artifact_uri,  # optional
 )
 # ! <end focus> ! #
