@@ -8,7 +8,9 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 from mlflow.entities.experiment import Experiment
+from mlflow.models import make_metric
 from mlflow.tracking.fluent import ActiveRun
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import mean_squared_error, r2_score
@@ -112,6 +114,37 @@ mlflow.sklearn.log_model(
 
 
 # ! <start focus> ! #
+# create custom metrics
+def my_random_calculation_1(eval_df, builtin_metrics):
+    return eval_df["prediction"] - eval_df["target"] + 100
+
+
+def my_random_calculation_2(eval_df, builtin_metrics):
+    return builtin_metrics["r2_score"] + 100
+
+
+my_metric_1 = make_metric(
+    eval_fn=my_random_calculation_1, greater_is_better=False, name="diff_adds_100"
+)
+
+my_metric_2 = make_metric(
+    eval_fn=my_random_calculation_2, greater_is_better=True, name="r2_adds_100"
+)
+
+
+# create custom artifacts
+def prediction_target_scatter(
+    eval_df, _builtin_metrics, artifacts_dir
+) -> dict[str, str]:
+    plt.scatter(eval_df["prediction"], eval_df["target"])
+    plt.xlabel("Targets")
+    plt.ylabel("Predictions")
+    plt.title("Targets vs Predictions")
+    plot_path = os.path.join(artifacts_dir, "scatter_plot.png")
+    plt.savefig(plot_path)
+    return {"scatter_plot": plot_path}
+
+
 # artifact_uri = mlflow.get_artifact_uri("model")
 artifact_uri = run.info.artifact_uri + "/model"
 mlflow.evaluate(
@@ -120,6 +153,11 @@ mlflow.evaluate(
     targets="quality",
     model_type="regressor",
     evaluators=["default"],
+    custom_metrics=[
+        my_metric_1,
+        my_metric_2,
+    ],
+    custom_artifacts=[prediction_target_scatter],
 )
 # ! <end focus> ! #
 
