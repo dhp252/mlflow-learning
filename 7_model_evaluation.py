@@ -4,14 +4,16 @@ import os
 import warnings
 from typing import Tuple
 
+import joblib
 import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from mlflow.entities.experiment import Experiment
-from mlflow.models import make_metric
+from mlflow.models import MetricThreshold, make_metric
 from mlflow.tracking.fluent import ActiveRun
+from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -23,6 +25,8 @@ warnings.filterwarnings("ignore")
 np.random.seed(40)
 
 EXP_NAME = os.path.basename(__file__).replace(".py", "")
+MODEL_ARTIFACT_PATH = "model"
+BASELINE_MODEL_ARTIFACT_PATH = "baseline_model"
 
 RUN_TAGS: dict[str, str] = {
     "type": "classification",
@@ -87,7 +91,7 @@ alpha = args.alpha
 l1_ratio = args.l1_ratio
 
 run: ActiveRun = mlflow.start_run(
-    experiment_id=exp_id, run_name="autolog_sklearn", tags=RUN_TAGS
+    experiment_id=exp_id, run_name="model_evaluation_with_baseline", tags=RUN_TAGS
 )
 
 mlflow.sklearn.autolog(
@@ -110,6 +114,44 @@ mlflow.sklearn.log_model(
     artifact_path="model",
     input_example=train_x.iloc[0:2],
     code_paths=[os.path.basename(__file__)],
+)
+
+# sklearn_model_path = "sklearn_model.pkl"
+# joblib.dump(lr, sklearn_model_path)
+# artifact = {"sklearn_model": sklearn_model_path, "data": data_dir}
+
+# Create baseline model
+baseline_model = DummyRegressor()
+baseline_model.fit(train_x, train_y)
+
+baseline_predicted_qualities = baseline_model.predict(test_x)
+
+rmse, r2 = eval_metrics(test_y, predicted_qualities)
+
+mlflow.log_metrics({"rmse": rmse, "r2": r2})
+
+baseline_model_path = "baseline_model.pkl"
+joblib.dump(baseline_model, baseline_model_path)
+baseline_artifacts = {"baseline_model": baseline_model_path}
+
+
+class SklearnModel(mlflow.pyfunc.PythonModel):
+
+    def __init__(self, artifact_name):
+        self.artifact_name = artifact_name
+
+    def load_context(self, context):
+        self.model = joblib.load(filename=context.artifacts[self.artifact_name])
+
+    def predict(self, context, model_input):
+        return self.model.predict(model_input)
+
+
+mlflow.pyfunc.log_model(
+    artifact_path=BASELINE_MODEL_ARTIFACT_PATH,
+    python_model=SklearnModel(BASELINE_MODEL_ARTIFACT_PATH),
+    artifacts=baseline_artifacts,
+    # code_paths=[os.path.basename(__file__)],
 )
 
 
@@ -145,19 +187,32 @@ def prediction_target_scatter(
     return {"scatter_plot": plot_path}
 
 
-# artifact_uri = mlflow.get_artifact_uri("model")
-artifact_uri = run.info.artifact_uri + "/model"
+# define thresholds
+thresholds = {
+    "mean_squared_error": MetricThreshold(
+        threshold=0.1,  # maximum allowed MSE
+        min_absolute_change=0.1,  # minimum absolute improvement compared to the baseline
+        min_relative_change=0.05,  # minimum relative improvement compared to the baseline
+        greater_is_better=False,  # lower MSE is better
+    ),
+}
+
+# artifact_uri = run.info.artifact_uri + "/model"
+artifact_uri = mlflow.get_artifact_uri(MODEL_ARTIFACT_PATH)
+baseline_artifact_uri = mlflow.get_artifact_uri(BASELINE_MODEL_ARTIFACT_PATH)
 mlflow.evaluate(
     model=artifact_uri,
     data=test,
     targets="quality",
     model_type="regressor",
     evaluators=["default"],
-    custom_metrics=[
+    custom_metrics=[  # optional
         my_metric_1,
         my_metric_2,
     ],
-    custom_artifacts=[prediction_target_scatter],
+    custom_artifacts=[prediction_target_scatter],  # optional
+    # validation_thresholds=thresholds,  # optional
+    baseline_model=baseline_artifact_uri,  # optional
 )
 # ! <end focus> ! #
 
